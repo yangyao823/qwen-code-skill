@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>可视化工作流编排器</title>
+<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #080c14;
+    --bg-secondary: #0e1320;
+    --bg-tertiary: #141a2a;
+    --bg-card: #182035;
+    --bg-hover: #1e2840;
+    --border: #253050;
+    --border-active: #3a4a70;
+    --text-primary: #dce4f4;
+    --text-secondary: #7e92b8;
+    --text-muted: #4a5a7a;
+    --accent: #3b82f6;
+    --accent-light: #60a5fa;
+    --accent-glow: rgba(59, 130, 246, 0.25);
+    --accent-dim: rgba(59, 130, 246, 0.08);
+    --success: #22c55e;
+    --success-bg: rgba(34, 197, 94, 0.1);
+    --warning: #eab308;
+    --warning-bg: rgba(234, 179, 8, 0.1);
+    --danger: #ef4444;
+    --danger-bg: rgba(239, 68, 68, 0.1);
+    --info: #38bdf8;
+    --info-bg: rgba(56, 189, 248, 0.1);
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.1);
+    --cyan: #22d3ee;
+    --cyan-bg: rgba(34, 211, 238, 0.1);
+    --node-file: #60a5fa;
+    --node-shell: #fbbf24;
+    --node-ai: #a78bfa;
+    --node-http: #4ade80;
+    --node-condition: #22d3ee;
+    --node-delay: #f87171;
+    --shadow: 0 4px 24px rgba(0,0,0,0.5);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --sidebar-w: 250px;
+    --panel-w: 370px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+    flex-shrink: 0;
+    height: 54px;
+  }
+  .header-left, .header-center, .header-right { display: flex; align-items: center; gap: 10px; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 30px; height: 30px;
+    background: linear-gradient(135deg, var(--accent), #1d4ed8);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #fff; font-weight: 700;
+  }
+  .logo-text {
+    font-size: 15px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-light), var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .logo-sub { font-size: 10px; color: var(--text-muted); margin-left: 4px; letter-spacing: 0.3px; }
+  .wf-name {
+    background: transparent; border: 1px solid transparent;
+    color: var(--text-primary); font-size: 14px; font-weight: 500;
+    padding: 6px 14px; border-radius: var(--radius-sm); outline: none;
+    transition: all 0.2s; text-align: center; min-width: 160px;
+  }
+  .wf-name:hover { border-color: var(--border); background: var(--bg-tertiary); }
+  .wf-name:focus { border-color: var(--accent); background: var(--bg-tertiary); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 13px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-tertiary); color: var(--text-secondary);
+    font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; font-family: inherit;
+  }
+  .btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-active); }
+  .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .btn-run {
+    background: linear-gradient(135deg, #1d4ed8, var(--accent));
+    color: #fff; border-color: transparent; font-weight: 600;
+  }
+  .btn-run:hover { box-shadow: 0 0 20px var(--accent-glow); filter: brightness(1.15); }
+  .btn-run.running {
+    background: var(--danger); color: #fff;
+    animation: pulse-btn 2s infinite;
+  }
+  @keyframes pulse-btn {
+    0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50% { box-shadow: 0 0 16px 4px rgba(239,68,68,0.2); }
+  }
+  .divider-v { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+
+  /* ===== Main ===== */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width: var(--sidebar-w); background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+  }
+  .sidebar-section { padding: 16px; }
+  .sidebar-title {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+    padding-left: 2px;
+  }
+  .node-tpl {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 11px; border-radius: var(--radius-sm);
+    cursor: grab; transition: all 0.15s; margin-bottom: 3px;
+    border: 1px solid transparent; user-select: none;
+  }
+  .node-tpl:hover { background: var(--bg-hover); border-color: var(--border); transform: translateX(3px); }
+  .node-tpl:active { cursor: grabbing; transform: scale(0.97); }
+  .node-icon {
+    width: 34px; height: 34px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .ni-file  { background: rgba(96,165,250,0.10); color: var(--node-file); }
+  .ni-shell { background: rgba(251,191,36,0.10); color: var(--node-shell); }
+  .ni-ai    { background: rgba(167,139,250,0.10); color: var(--node-ai); }
+  .ni-http  { background: rgba(74,222,128,0.10); color: var(--node-http); }
+  .ni-cond  { background: rgba(34,211,238,0.10); color: var(--node-condition); }
+  .ni-delay { background: rgba(248,113,113,0.10); color: var(--node-delay); }
+  .ni-name  { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .ni-desc  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .sidebar-hint {
+    padding: 0 16px 16px; border-top: 1px solid var(--border); margin-top: auto;
+  }
+  .hint-title {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 10px;
+  }
+  .hint-list { font-size: 11px; color: var(--text-muted); line-height: 1.8; }
+  .hint-list span { color: var(--accent); font-weight: 600; }
+
+  /* ===== Canvas ===== */
+  .canvas-wrap { flex: 1; position: relative; background: var(--bg-primary); overflow: hidden; }
+  #workflow-canvas { width: 100%; height: 100%; }
+  .vis-network { outline: none !important; }
+  .vis-navigation { display: none !important; }
+  .canvas-wrap::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: radial-gradient(circle at 1px 1px, var(--border) 0.5px, transparent 0.5px);
+    background-size: 28px 28px; opacity: 0.25;
+    pointer-events: none; z-index: 0;
+  }
+  .zoom-bar {
+    position: absolute; bottom: 14px; left: 14px;
+    display: flex; gap: 3px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 3px; z-index: 10;
+  }
+  .zoom-btn {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--text-secondary);
+    border-radius: 6px; cursor: pointer; font-size: 16px; transition: all 0.15s;
+  }
+  .zoom-btn:hover { background: var(--bg-hover); color: var(--accent-light); }
+  .canvas-hint {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--text-muted);
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    padding: 5px 14px; border-radius: 20px; z-index: 10;
+    pointer-events: none; opacity: 0.7;
+  }
+  .canvas-hint span { color: var(--accent); }
+
+  /* ===== Right Panel ===== */
+  .panel {
+    width: var(--panel-w); background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+  }
+  .panel-tabs {
+    display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .panel-tab {
+    flex: 1; padding: 11px 16px; font-size: 12px; font-weight: 500;
+    color: var(--text-muted); text-align: center; cursor: pointer;
+    border: none; border-bottom: 2px solid transparent;
+    transition: all 0.15s; background: none; font-family: inherit;
+  }
+  .panel-tab:hover { color: var(--text-secondary); background: var(--bg-tertiary); }
+  .panel-tab.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+  .panel-body { flex: 1; overflow-y: auto; padding: 16px; }
+  .panel-body::-webkit-scrollbar { width: 5px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Progress */
+  .prog-wrap {
+    padding: 0 16px 10px; background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border); display: none;
+  }
+  .prog-wrap.show { display: block; }
+  .prog-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .prog-label { font-size: 11px; color: var(--text-secondary); }
+  .prog-count { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+  .prog-track { height: 3px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; }
+  .prog-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, #1d4ed8, var(--accent-light));
+    transition: width 0.5s ease; width: 0%;
+  }
+
+  /* Empty state */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; text-align: center; padding: 24px;
+  }
+  .empty-icon {
+    width: 52px; height: 52px; background: var(--bg-tertiary);
+    border-radius: 14px; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-bottom: 14px; color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .empty-title { font-size: 14px; font-weight: 500; color: var(--text-secondary); margin-bottom: 5px; }
+  .empty-desc  { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+  /* Property fields */
+  .pg { margin-bottom: 18px; }
+  .pl {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px;
+  }
+  .pi {
+    width: 100%; padding: 8px 11px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary);
+    font-size: 13px; font-family: inherit; outline: none; transition: all 0.15s;
+  }
+  .pi:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .pi-ta { resize: vertical; min-height: 72px; line-height: 1.5; }
+  .ps {
+    width: 100%; padding: 8px 11px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary);
+    font-size: 13px; font-family: inherit; outline: none; cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%234a5a7a' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  .ps:focus { border-color: var(--accent); }
+  .prop-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  }
+  .prop-header-icon {
+    width: 42px; height: 42px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 19px; flex-shrink: 0;
+  }
+  .prop-header-name {
+    font-weight: 600; font-size: 14px; padding: 5px 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary); width: 100%;
+    font-family: inherit; outline: none; transition: all 0.15s;
+  }
+  .prop-header-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .prop-id {
+    font-size: 10px; color: var(--text-muted); font-family: monospace;
+    background: var(--bg-tertiary); padding: 5px 9px;
+    border-radius: 5px; word-break: break-all; border: 1px solid var(--border);
+  }
+  .del-btn {
+    width: 100%; padding: 8px;
+    background: transparent; border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 6px; color: var(--danger); font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit; transition: all 0.15s; margin-top: 10px;
+  }
+  .del-btn:hover { background: var(--danger-bg); border-color: var(--danger); }
+
+  /* Status badge */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 600;
+  }
+  .b-idle    { background: var(--bg-tertiary); color: var(--text-muted); }
+  .b-running { background: var(--accent-dim); color: var(--accent-light); }
+  .b-success { background: var(--success-bg); color: var(--success); }
+  .b-error   { background: var(--danger-bg); color: var(--danger); }
+  .b-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .b-running .b-dot { animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Log entries */
+  .log-entry {
+    display: flex; gap: 10px; padding: 10px 12px;
+    border-radius: var(--radius-sm); margin-bottom: 5px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from { opacity:0; transform:translateY(6px); } }
+  .log-ico {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0; margin-top: 1px;
+  }
+  .li-ok   { background: var(--success-bg); color: var(--success); }
+  .li-err  { background: var(--danger-bg); color: var(--danger); }
+  .li-run  { background: var(--accent-dim); color: var(--accent-light); }
+  .li-info { background: var(--info-bg); color: var(--info); }
+  .log-body { flex: 1; min-width: 0; }
+  .log-title { font-size: 12px; font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+  .log-detail { font-size: 11px; color: var(--text-muted); line-height: 1.5; word-break: break-all; }
+  .log-time { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-family: monospace; }
+
+  /* Context menu */
+  .ctx {
+    position: fixed; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 4px; box-shadow: var(--shadow); z-index: 1000;
+    min-width: 150px; display: none;
+  }
+  .ctx.open { display: block; }
+  .ctx-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 11px; font-size: 12px; color: var(--text-secondary);
+    border-radius: 6px; cursor: pointer; transition: all 0.1s;
+    border: none; background: none; width: 100%; text-align: left; font-family: inherit;
+  }
+  .ctx-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .ctx-item.danger:hover { background: var(--danger-bg); color: var(--danger); }
+  .ctx-sep { height: 1px; background: var(--border); margin: 3px 0; }
+
+  /* Toast */
+  .toast-box {
+    position: fixed; top: 62px; right: 18px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .toast {
+    padding: 9px 15px; border-radius: var(--radius-sm);
+    font-size: 12px; font-weight: 500;
+    animation: tIn 0.3s ease, tOut 0.3s ease 2.7s;
+    box-shadow: var(--shadow); max-width: 280px;
+  }
+  .t-success { background: var(--success); color: #fff; }
+  .t-error   { background: var(--danger); color: #fff; }
+  .t-info    { background: var(--accent); color: #fff; }
+  @keyframes tIn  { from { opacity:0; transform:translateX(20px); } }
+  @keyframes tOut { to   { opacity:0; transform:translateX(20px); } }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">
+      <div class="logo-icon">W</div>
+      <div>
+        <div class="logo-text">工作流编排器</div>
+        <div class="logo-sub">Qwen Code Skill</div>
+      </div>
+    </div>
+  </div>
+  <div class="header-center">
+    <input type="text" class="wf-name" id="wfName" value="我的工作流" spellcheck="false">
+  </div>
+  <div class="header-right">
+    <button class="btn" onclick="clearAll()" title="清空画布">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6"/></svg>
+      清空
+    </button>
+    <button class="btn" onclick="exportWorkflow()" title="导出">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      导出
+    </button>
+    <div class="divider-v"></div>
+    <button class="btn btn-run" id="btnRun" onclick="toggleExecution()">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <span id="btnRunText">执行工作流</span>
+    </button>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">节点类型</div>
+      <div class="node-tpl" draggable="true" data-type="file">
+        <div class="node-icon ni-file">📄</div>
+        <div><div class="ni-name">文件操作</div><div class="ni-desc">读写文件内容</div></div>
+      </div>
+      <div class="node-tpl" draggable="true" data-type="shell">
+        <div class="node-icon ni-shell">💻</div>
+        <div><div class="ni-name">Shell 执行</div><div class="ni-desc">运行命令行指令</div></div>
+      </div>
+      <div class="node-tpl" draggable="true" data-type="ai">
+        <div class="node-icon ni-ai">🤖</div>
+        <div><div class="ni-name">AI 分析</div><div class="ni-desc">智能代码分析</div></div>
+      </div>
+      <div class="node-tpl" draggable="true" data-type="http">
+        <div class="node-icon ni-http">🌐</div>
+        <div><div class="ni-name">HTTP 请求</div><div class="ni-desc">调用外部 API</div></div>
+      </div>
+      <div class="node-tpl" draggable="true" data-type="condition">
+        <div class="node-icon ni-cond">🔀</div>
+        <div><div class="ni-name">条件判断</div><div class="ni-desc">分支逻辑控制</div></div>
+      </div>
+      <div class="node-tpl" draggable="true" data-type="delay">
+        <div class="node-icon ni-delay">⏱️</div>
+        <div><div class="ni-name">延时等待</div><div class="ni-desc">暂停指定时间</div></div>
+      </div>
+    </div>
+    <div class="sidebar-hint">
+      <div class="hint-title">使用说明</div>
+      <div class="hint-list">
+        <span>1.</span> 拖拽左侧节点到画布<br>
+        <span>2.</span> 从节点边缘拖出连线<br>
+        <span>3.</span> 右键节点可删除 / 复制<br>
+        <span>4.</span> 点击节点编辑属性<br>
+        <span>5.</span> 点击「执行」运行工作流
+      </div>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <div class="canvas-wrap">
+    <div id="workflow-canvas"></div>
+    <div class="zoom-bar">
+      <button class="zoom-btn" onclick="zoomIn()" title="放大">+</button>
+      <button class="zoom-btn" onclick="zoomOut()" title="缩小">−</button>
+      <button class="zoom-btn" onclick="zoomFit()" title="适配">⊞</button>
+    </div>
+    <div class="canvas-hint" id="canvasHint">拖拽左侧节点到此画布 · 滚轮缩放 · <span>右键菜单</span>操作</div>
+  </div>
+
+  <!-- Right Panel -->
+  <aside class="panel">
+    <div class="panel-tabs">
+      <button class="panel-tab active" data-tab="properties" onclick="switchTab('properties')">属性</button>
+      <button class="panel-tab" data-tab="logs" onclick="switchTab('logs')">执行日志</button>
+    </div>
+    <div class="prog-wrap" id="progWrap">
+      <div class="prog-row">
+        <span class="prog-label">执行进度</span>
+        <span class="prog-count" id="progCount">0 / 0</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    </div>
+    <div class="panel-body" id="panelProp">
+      <div class="empty-state" id="propEmpty">
+        <div class="empty-icon">🎯</div>
+        <div class="empty-title">未选中节点</div>
+        <div class="empty-desc">点击画布中的节点以查看和编辑其属性</div>
+      </div>
+      <div id="propEditor" style="display:none;"></div>
+    </div>
+    <div class="panel-body" id="panelLogs" style="display:none;">
+      <div id="logBox">
+        <div class="empty-state" id="logEmpty">
+          <div class="empty-icon">📋</div>
+          <div class="empty-title">暂无执行记录</div>
+          <div class="empty-desc">执行工作流后，各节点的运行结果将在此显示</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Context Menu -->
+<div class="ctx" id="ctxMenu">
+  <button class="ctx-item" onclick="ctxDup()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+    复制节点
+  </button>
+  <div class="ctx-sep"></div>
+  <button class="ctx-item danger" onclick="ctxDel()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M5 6v14a2 2 0 002 2h10a2 2 0 002-2V6"/></svg>
+    删除节点
+  </button>
+</div>
+
+<!-- Toast -->
+<div class="toast-box" id="toastBox"></div>
+
+<script>
+// ===== NODE TYPES =====
+const TYPES = {
+  file: {
+    label: '文件操作', icon: '📄',
+    color: '#60a5fa', bg: 'rgba(96,165,250,0.07)', bd: 'rgba(96,165,250,0.25)',
+    defaults: { action: 'read', path: './src/main.js', content: '' },
+    sim: () => '读取文件成功，共 42 行，1280 字节'
+  },
+  shell: {
+    label: 'Shell 执行', icon: '💻',
+    color: '#fbbf24', bg: 'rgba(251,191,36,0.07)', bd: 'rgba(251,191,36,0.25)',
+    defaults: { command: 'npm test', timeout: '30' },
+    sim: () => '命令执行完成，退出码 0'
+  },
+  ai: {
+    label: 'AI 分析', icon: '🤖',
+    color: '#a78bfa', bg: 'rgba(167,139,250,0.07)', bd: 'rgba(167,139,250,0.25)',
+    defaults: { prompt: '分析这段代码的潜在问题', model: 'qwen-max' },
+    sim: () => '分析完成：发现 2 个潜在问题，已生成修复建议'
+  },
+  http: {
+    label: 'HTTP 请求', icon: '🌐',
+    color: '#4ade80', bg: 'rgba(74,222,128,0.07)', bd: 'rgba(74,222,128,0.25)',
+    defaults: { method: 'GET', url: 'https://api.example.com/data', body: '' },
+    sim: () => '请求成功 [200 OK]，响应 1.2KB'
+  },
+  condition: {
+    label: '条件判断', icon: '🔀',
+    color: '#22d3ee', bg: 'rgba(34,211,238,0.07)', bd: 'rgba(34,211,238,0.25)',
+    defaults: { expression: 'status === 200', trueLabel: '是', falseLabel: '否' },
+    sim: () => '条件判断结果：true'
+  },
+  delay: {
+    label: '延时等待', icon: '⏱️',
+    color: '#f87171', bg: 'rgba(248,113,113,0.07)', bd: 'rgba(248,113,113,0.25)',
+    defaults: { duration: '1000', unit: 'ms' },
+    sim: () => '等待 1000ms 完成'
+  }
+};
+
+// ===== STATE =====
+let nodes = new vis.DataSet([]);
+let edges = new vis.DataSet([]);
+let net = null;
+let selId = null;
+let running = false;
+let aborted = false;
+let counter = 0;
+let ctxId = null;
+
+// ===== INIT =====
+function init() {
+  const el = document.getElementById('workflow-canvas');
+  net = new vis.Network(el, { nodes, edges }, {
+    nodes: {
+      shape: 'box',
+      widthConstraint: { minimum: 150, maximum: 190 },
+      heightConstraint: { minimum: 46 },
+      margin: { top: 10, right: 14, bottom: 10, left: 14 },
+      font: { size: 13, face: 'Inter, sans-serif', color: '#dce4f4' },
+      borderWidth: 1, borderWidthSelected: 2,
+      shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 8, x: 0, y: 4 },
+      chosen: true, shapeProperties: { borderRadius: 10 },
+    },
+    edges: {
+      smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 },
+      color: { color: '#2a3654', highlight: '#3b82f6', hover: '#60a5fa' },
+      width: 2,
+      arrows: { to: { enabled: true, scaleFactor: 0.6, type: 'arrow' } },
+      font: { size: 0 }, hoverWidth: 3, selectionWidth: 3,
+    },
+    physics: { enabled: false },
+    interaction: { dragNodes: true, dragView: true, zoomView: true, multiselect: true, hover: true, keyboard: { enabled: true, bindToWindow: false } },
+    manipulation: {
+      enabled: true,
+      addEdge(d, cb) {
+        if (d.from !== d.to && !edges.get().some(e => e.from === d.from && e.to === d.to)) {
+          d.id = 'e' + Date.now(); cb(d); toast('连线创建成功', 'success');
+        }
+      }
+    }
+  });
+
+  net.on('click', p => { hideCtx(); p.nodes.length ? select(p.nodes[0]) : deselect(); });
+  net.on('oncontext', p => {
+    p.event.preventDefault();
+    const nid = net.getNodeAt(p.pointer.DOM);
+    if (nid) { ctxId = nid; select(nid); showCtx(p.pointer.DOM.x, p.pointer.DOM.y); }
+    else hideCtx();
+  });
+  net.on('deselectNode', deselect);
+  nodes.on('add', updHint);
+  nodes.on('remove', updHint);
+}
+
+function updHint() {
+  document.getElementById('canvasHint').style.display = nodes.length > 0 ? 'none' : 'block';
+}
+
+// ===== DRAG & DROP =====
+document.querySelectorAll('.node-tpl').forEach(el => {
+  el.addEventListener('dragstart', e => { e.dataTransfer.setData('nt', el.dataset.type); e.dataTransfer.effectAllowed = 'copy'; });
+});
+const cWrap = document.querySelector('.canvas-wrap');
+cWrap.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+cWrap.addEventListener('drop', e => {
+  e.preventDefault();
+  const t = e.dataTransfer.getData('nt');
+  if (!t || !TYPES[t]) return;
+  const r = cWrap.getBoundingClientRect();
+  const p = net.DOMtoCanvas({ x: e.clientX - r.left, y: e.clientY - r.top });
+  addNode(t, p.x, p.y);
+});
+
+// ===== NODE MGMT =====
+function addNode(type, x, y) {
+  const c = TYPES[type]; counter++;
+  const id = 'n' + Date.now() + counter;
+  nodes.add({
+    id, label: c.icon + '  ' + c.label, x, y,
+    color: { background: c.bg, border: c.bd, highlight: { background: c.bg, border: c.color }, hover: { background: c.bg, border: c.color } },
+    font: { color: '#dce4f4' },
+    _type: type, _name: c.label, _data: { ...c.defaults }, _status: 'idle',
+  });
+  select(id); toast('已添加「' + c.label + '」节点', 'info');
+}
+
+function select(id) { selId = id; renderProp(); switchTab('properties'); }
+function deselect() { selId = null; renderProp(); }
+
+// ===== PROPERTIES =====
+function renderProp() {
+  const empty = document.getElementById('propEmpty');
+  const ed = document.getElementById('propEditor');
+  if (!selId) { empty.style.display = 'flex'; ed.style.display = 'none'; return; }
+  const n = nodes.get(selId);
+  if (!n) { empty.style.display = 'flex'; ed.style.display = 'none'; return; }
+  empty.style.display = 'none'; ed.style.display = 'block';
+
+  const t = n._type, c = TYPES[t], d = n._data;
+  const stMap = { idle: ['b-idle','等待中'], running: ['b-running','运行中'], success: ['b-success','成功'], error: ['b-error','失败'] };
+  const st = stMap[n._status] || stMap.idle;
+  const badge = '<span class="badge ' + st[0] + '"><span class="b-dot"></span>' + st[1] + '</span>';
+
+  let f = '';
+  if (t === 'file') {
+    f = pg('操作类型', '<select class="ps" onchange="updData(\'action\',this.value)">' +
+      opt(d.action,'read','读取文件') + opt(d.action,'write','写入文件') + opt(d.action,'append','追加内容') + opt(d.action,'delete','删除文件') + '</select>') +
+      pg('文件路径', '<input class="pi" value="' + h(d.path) + '" oninput="updData(\'path\',this.value)" placeholder="./path/to/file">');
+    if (d.action !== 'read' && d.action !== 'delete')
+      f += pg('内容', '<textarea class="pi pi-ta" oninput="updData(\'content\',this.value)" placeholder="写入的内容...">' + h(d.content) + '</textarea>');
+  } else if (t === 'shell') {
+    f = pg('命令', '<input class="pi" value="' + h(d.command) + '" oninput="updData(\'command\',this.value)" placeholder="npm test">') +
+        pg('超时（秒）', '<input class="pi" type="number" value="' + h(d.timeout) + '" oninput="updData(\'timeout\',this.value)">');
+  } else if (t === 'ai') {
+    f = pg('模型', '<select class="ps" onchange="updData(\'model\',this.value)">' +
+      opt(d.model,'qwen-max','Qwen-Max') + opt(d.model,'qwen-plus','Qwen-Plus') + opt(d.model,'qwen-turbo','Qwen-Turbo') + opt(d.model,'qwen-coder','Qwen-Coder') + '</select>') +
+      pg('提示词', '<textarea class="pi pi-ta" oninput="updData(\'prompt\',this.value)" placeholder="输入 AI 提示词...">' + h(d.prompt) + '</textarea>');
+  } else if (t === 'http') {
+    f = pg('方法', '<select class="ps" onchange="updData(\'method\',this.value)">' +
+      opt(d.method,'GET','GET') + opt(d.method,'POST','POST') + opt(d.method,'PUT','PUT') + opt(d.method,'DELETE','DELETE') + '</select>') +
+      pg('URL', '<input class="pi" value="' + h(d.url) + '" oninput="updData(\'url\',this.value)" placeholder="https://api.example.com">');
+    if (d.method !== 'GET')
+      f += pg('请求体', '<textarea class="pi pi-ta" oninput="updData(\'body\',this.value)" placeholder=\'{"key":"value"}\'>' + h(d.body) + '</textarea>');
+  } else if (t === 'condition') {
+    f = pg('条件表达式', '<input class="pi" value="' + h(d.expression) + '" oninput="updData(\'expression\',this.value)" placeholder="status === 200">') +
+        pg('True 分支', '<input class="pi" value="' + h(d.trueLabel) + '" oninput="updData(\'trueLabel\',this.value)">') +
+        pg('False 分支', '<input class="pi" value="' + h(d.falseLabel) + '" oninput="updData(\'falseLabel\',this.value)">');
+  } else if (t === 'delay') {
+    f = pg('等待时间', '<input class="pi" type="number" value="' + h(d.duration) + '" oninput="updData(\'duration\',this.value)">') +
+        pg('单位', '<select class="ps" onchange="updData(\'unit\',this.value)">' +
+          opt(d.unit,'ms','毫秒 (ms)') + opt(d.unit,'s','秒 (s)') + '</select>');
+  }
+
+  ed.innerHTML =
+    '<div class="prop-header">' +
+      '<div class="prop-header-icon ni-' + t + '">' + c.icon + '</div>' +
+      '<div style="flex:1">' +
+        '<input class="prop-header-name" value="' + h(n._name) + '" oninput="updName(this.value)" placeholder="节点名称">' +
+        '<div style="margin-top:5px">' + badge + '</div>' +
+      '</div>' +
+    '</div>' +
+    pg('节点 ID', '<div class="prop-id">' + selId + '</div>') +
+    f +
+    '<button class="del-btn" onclick="delSel()">删除此节点</button>';
+}
+
+function pg(label, inner) { return '<div class="pg"><div class="pl">' + label + '</div>' + inner + '</div>'; }
+function opt(cur, val, txt) { return '<option value="' + val + '"' + (cur === val ? ' selected' : '') + '>' + txt + '</option>'; }
+function h(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function updData(k, v) {
+  if (!selId) return;
+  const n = nodes.get(selId); if (!n) return;
+  nodes.update({ id: selId, _data: { ...n._data, [k]: v } });
+  renderProp();
+}
+function updName(v) {
+  if (!selId) return;
+  const n = nodes.get(selId); if (!n) return;
+  nodes.update({ id: selId, _name: v, label: TYPES[n._type].icon + '  ' + v });
+}
+function delSel() { if (selId) delNode(selId); }
+function delNode(id) {
+  edges.get().filter(e => e.from === id || e.to === id).forEach(e => edges.remove(e.id));
+  nodes.remove(id);
+  if (selId === id) { selId = null; renderProp(); }
+  toast('节点已删除', 'info');
+}
+
+// ===== CTX MENU =====
+function showCtx(x, y) {
+  const m = document.getElementById('ctxMenu');
+  m.style.left = x + 'px'; m.style.top = y + 'px'; m.classList.add('open');
+}
+function hideCtx() { document.getElementById('ctxMenu').classList.remove('open'); }
+document.addEventListener('click', hideCtx);
+function ctxDup() {
+  hideCtx(); if (!ctxId) return;
+  const n = nodes.get(ctxId); if (!n) return;
+  counter++;
+  const id = 'n' + Date.now() + counter;
+  nodes.add({ ...n, id, x: (n.x||0)+40, y: (n.y||0)+40, _status: 'idle', _data: { ...n._data } });
+  select(id); toast('节点已复制', 'success');
+}
+function ctxDel() { hideCtx(); if (ctxId) delNode(ctxId); }
+
+// ===== TABS =====
+function switchTab(tab) {
+  document.querySelectorAll('.panel-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('panelProp').style.display = tab === 'properties' ? 'block' : 'none';
+  document.getElementById('panelLogs').style.display = tab === 'logs' ? 'block' : 'none';
+}
+
+// ===== ZOOM =====
+function zoomIn()  { if (net) net.moveTo({ scale: net.getScale() * 1.3 }); }
+function zoomOut() { if (net) net.moveTo({ scale: net.getScale() / 1.3 }); }
+function zoomFit() { if (net) net.fit({ animation: true, padding: 0.15 }); }
+
+// ===== EXECUTION =====
+async function toggleExecution() {
+  if (running) { aborted = true; toast('正在停止执行...', 'info'); return; }
+  if (!nodes.length) { toast('画布为空，请先添加节点', 'error'); return; }
+  const order = topo();
+  if (!order) { toast('检测到循环依赖，无法执行', 'error'); return; }
+
+  running = true; aborted = false;
+  const btn = document.getElementById('btnRun');
+  const txt = document.getElementById('btnRunText');
+  btn.classList.add('running'); txt.textContent = '停止执行';
+  const pw = document.getElementById('progWrap');
+  pw.classList.add('show');
+  nodes.forEach(n => nodes.update({ id: n.id, _status: 'idle' }));
+  switchTab('logs');
+
+  const total = order.length; let done = 0;
+  for (const nid of order) {
+    if (aborted) break;
+    const n = nodes.get(nid); if (!n) continue;
+    nodes.update({ id: nid, _status: 'running' });
+    net.selectNodes([nid]);
+    net.focus(nid, { scale: 1.2, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+    addLog(n, 'running'); updProg(done, total);
+    await slp(600 + Math.random() * 800);
+    if (aborted) { nodes.update({ id: nid, _status: 'idle' }); addLog(n, 'aborted'); break; }
+    const ok = Math.random() > 0.1;
+    nodes.update({ id: nid, _status: ok ? 'success' : 'error' });
+    addLog(n, ok ? 'success' : 'error', ok ? TYPES[n._type].sim() : '执行失败：模拟错误');
+    updProg(++done, total);
+    if (selId === nid) renderProp();
+  }
+
+  running = false;
+  btn.classList.remove('running'); txt.textContent = '执行工作流';
+  if (!aborted) toast('工作流执行完毕，' + done + '/' + total + ' 个节点成功', done === total ? 'success' : 'error');
+  setTimeout(() => pw.classList.remove('show'), 2000);
+}
+
+function topo() {
+  const ids = nodes.getIds(), adj = {}, deg = {};
+  ids.forEach(id => { adj[id] = []; deg[id] = 0; });
+  edges.forEach(e => { if (adj[e.from] && deg[e.to] !== undefined) { adj[e.from].push(e.to); deg[e.to]++; } });
+  const q = ids.filter(id => deg[id] === 0), r = [];
+  while (q.length) { const id = q.shift(); r.push(id); adj[id].forEach(n => { if (--deg[n] === 0) q.push(n); }); }
+  return r.length === ids.length ? r : null;
+}
+
+function updProg(d, t) {
+  document.getElementById('progCount').textContent = d + ' / ' + t;
+  document.getElementById('progFill').style.width = (t > 0 ? d / t * 100 : 0) + '%';
+}
+
+// ===== LOG =====
+function addLog(n, st, detail) {
+  const box = document.getElementById('logBox');
+  const empty = document.getElementById('logEmpty');
+  if (empty) empty.style.display = 'none';
+  const c = TYPES[n._type];
+  const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const map = { running: ['li-run','⏳'], success: ['li-ok','✓'], error: ['li-err','✗'], aborted: ['li-info','⏹'] };
+  const s = map[st] || map.running;
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  el.innerHTML = '<div class="log-ico ' + s[0] + '">' + s[1] + '</div>' +
+    '<div class="log-body">' +
+      '<div class="log-title">' + c.icon + ' ' + h(n._name) + '</div>' +
+      '<div class="log-detail">' + h(detail || (st === 'running' ? '正在执行...' : st === 'aborted' ? '执行已中止' : '')) + '</div>' +
+      '<div class="log-time">' + time + '</div>' +
+    '</div>';
+  box.insertBefore(el, box.firstChild);
+}
+
+// ===== UTILS =====
+function slp(ms) { return new Promise(r => setTimeout(r, ms)); }
+function toast(msg, type) {
+  const box = document.getElementById('toastBox');
+  const el = document.createElement('div');
+  el.className = 'toast t-' + type; el.textContent = msg;
+  box.appendChild(el); setTimeout(() => el.remove(), 3000);
+}
+function clearAll() {
+  if (running) { toast('执行中无法清空', 'error'); return; }
+  if (!nodes.length) return;
+  if (!confirm('确定要清空画布吗？')) return;
+  nodes.clear(); edges.clear(); selId = null; counter = 0;
+  renderProp(); toast('画布已清空', 'info');
+}
+function exportWorkflow() {
+  const d = {
+    name: document.getElementById('wfName').value,
+    nodes: nodes.get().map(n => ({ id: n.id, type: n._type, name: n._name, x: n.x, y: n.y, config: n._data })),
+    edges: edges.get().map(e => ({ id: e.id, from: e.from, to: e.to })),
+  };
+  const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = (d.name || 'workflow') + '.json'; a.click();
+  toast('工作流已导出', 'success');
+}
+
+// ===== BOOT =====
+init();
+setTimeout(() => {
+  addNode('file', -200, -60);
+  addNode('shell', 0, -60);
+  addNode('ai', 200, -60);
+  const ids = nodes.getIds();
+  if (ids.length >= 3) {
+    edges.add({ id: 'demo1', from: ids[0], to: ids[1] });
+    edges.add({ id: 'demo2', from: ids[1], to: ids[2] });
+  }
+  deselect(); net.fit({ animation: false, padding: 0.2 });
+}, 300);
+</script>
+</body>
+</html>
